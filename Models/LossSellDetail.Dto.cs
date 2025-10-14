@@ -36,6 +36,7 @@ namespace DashboardAPI.Models
         public decimal LossSell { get; set; }
         public decimal? AVGPerBill { get; set; }
         public decimal ProdTimeAVG { get; set; }
+        public double? Median { get; set; }
         // public string? CashierSpeed { get; set; }
         public RptElCalculateSale? rptElCalculateSale { get; set; }
 
@@ -55,7 +56,8 @@ namespace DashboardAPI.Models
         public decimal AvgBillTotal { get; set; }
         public decimal AvgPrice { get; set; }
         public decimal ProductionTime { get; set; }
-        public decimal OptimalMinute { get; set; }
+        public decimal  OptimalMinute { get; set; }
+        public double Median { get; set; }
         public decimal AvgSeatingTime { get; set; }
         public decimal GapBetweenQueue { get; set; }
 

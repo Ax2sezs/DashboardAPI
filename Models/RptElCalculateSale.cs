@@ -20,6 +20,7 @@ namespace DashboardAPI.Models
         public int? Branch_Bill { get; set; }
         public decimal? Saleprebill { get; set; }
         public decimal? LostSalePerBill { get; set; }
+        public double? Median { get; set; }
 
     }
 }
