@@ -23,11 +23,11 @@ namespace DashboardAPI.Controllers
         [Authorize]
         [HttpGet]
         public async Task<ActionResult<IEnumerable<LossSellSummaryResponseDto>>> GetSummary(
-            string? outletNameFilter,
-            DateTime? startDate,
-            DateTime? endDate,
-            bool isSum
-        )
+     [FromQuery] List<string>? outletNameFilter,
+     DateTime? startDate,
+     DateTime? endDate,
+     bool isSum
+ )
         {
             var result = await _summaryService.GetSummaryAsync(
                 User,
@@ -36,8 +36,10 @@ namespace DashboardAPI.Controllers
                 endDate,
                 isSum
             );
+
             return Ok(result);
         }
+
 
         [Authorize]
         [HttpGet("summary/hourly")]
@@ -58,19 +60,21 @@ namespace DashboardAPI.Controllers
 
         [Authorize]
         [HttpGet("{outletNameFilter}")]
-        public async Task<ActionResult<LossSellDetailDto>> GetDetail(
-            string outletNameFilter,
-            DateTime? startDate,
-            DateTime? endDate
-        )
+        public async Task<ActionResult<List<LossSellDetailDto>>> GetDetail(
+            string? outletNameFilter,
+     DateTime? startDate,
+     DateTime? endDate
+ )
         {
             var result = await _summaryService.GetDetailByOutletAsync(
                 outletNameFilter,
                 startDate,
                 endDate
             );
+
             return Ok(result);
         }
+
 
         [Authorize]
         [HttpGet("get-bill-details")]

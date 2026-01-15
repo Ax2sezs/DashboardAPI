@@ -10,16 +10,17 @@ namespace DashboardAPI.Services
     {
         Task<IEnumerable<LossSellSummaryResponseDto>> GetSummaryAsync(
             ClaimsPrincipal user,
-            string? outletNameFilter,
+    List<string>? outletNameFilter,
             DateTime? startDate,
             DateTime? endDate,
             bool isSum
         );
         Task<LossSellDetailDto?> GetDetailByOutletAsync(
-            string outletNameFilter,
-            DateTime? startDate,
-            DateTime? endDate
-        );
+     string? outletNameFilter,
+     DateTime? startDate,
+     DateTime? endDate
+ );
+
         Task<bool> AddNoteAsync(AddNoteDto dto);
         Task<List<NoteFeedDto>> GetNotesFeedAsync(string outletNameFilter, DateTime? calDate);
         Task<List<NoteFeedDto>> GetNotesByRunIdAsync(Guid runId);

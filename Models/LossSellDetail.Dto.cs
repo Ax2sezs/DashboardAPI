@@ -6,6 +6,7 @@ namespace DashboardAPI.Models
         public string OutletName { get; set; }
         public decimal NetDineIn { get; set; }
         public decimal LossOpp { get; set; }
+        public decimal DailyPerBill { get; set; }
         public List<HourlyTrendDto> HourlyTrend { get; set; }
     }
 

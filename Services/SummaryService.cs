@@ -240,35 +240,62 @@ namespace DashboardAPI.Services
         // }
 
         public async Task<IEnumerable<LossSellSummaryResponseDto>> GetSummaryAsync(
-            ClaimsPrincipal user,
-            string? outletNameFilter,
-            DateTime? startDate,
-            DateTime? endDate,
-            bool isSum
-        )
+     ClaimsPrincipal user,
+     List<string>? outletNameFilter,
+     DateTime? startDate,
+     DateTime? endDate,
+     bool isSum
+ )
         {
             _context.Database.SetCommandTimeout(180);
+            // =========================
+            // 0.x default date = current month
+            // =========================
+            if (!startDate.HasValue && !endDate.HasValue)
+            {
+                var today = DateTime.Today;
+                startDate = new DateTime(today.Year, today.Month, 1);
+                endDate = startDate.Value.AddMonths(1).AddDays(-1);
+            }
 
-            var allowedBranches = GetUserBranches(user).Select(b => b.ToUpper()).ToList();
+            // =========================
+            // 0. เตรียม branch ที่ user มีสิทธิ์
+            // =========================
+            var allowedBranches = GetUserBranches(user)
+                .Select(b => b.ToUpper())
+                .ToList();
+
             if (!allowedBranches.Any())
+            {
                 return new List<LossSellSummaryResponseDto>
-                {
-                    new LossSellSummaryResponseDto
-                    {
-                        IsSum = false,
-                        Sum = null,
-                        Details = new List<LossSellSummaryDto>(),
-                    },
-                };
+        {
+            new LossSellSummaryResponseDto
+            {
+                IsSum = false,
+                Sum = null,
+                Details = new List<LossSellSummaryDto>(),
+            },
+        };
+            }
+
+            // =========================
+            // 0.1 เตรียม outlet filter (หลายสาขา)
+            // =========================
+            var outletFilters = outletNameFilter?
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(x => x.ToUpper())
+                .ToList();
 
             // =========================
             // 1. Loss Group (Daily)
             // =========================
             var lossGrouped = await _context
-                .uvw_El_Calculation.Where(x => allowedBranches.Contains(x.OutletName.ToUpper()))
+                .uvw_El_Calculation
+                .Where(x => allowedBranches.Contains(x.OutletName.ToUpper()))
                 .Where(x =>
-                    string.IsNullOrEmpty(outletNameFilter)
-                    || x.OutletName.ToUpper() == outletNameFilter.ToUpper()
+                    outletFilters == null
+                    || !outletFilters.Any()
+                    || outletFilters.Contains(x.OutletName.ToUpper())
                 )
                 .Where(x =>
                     !startDate.HasValue
@@ -302,13 +329,21 @@ namespace DashboardAPI.Services
             // 2. Sale Group (Daily)
             // =========================
             var saleGrouped = await _context
-                .Rpt_EL_CalculateSale.Where(s =>
-                    string.IsNullOrEmpty(outletNameFilter)
-                    || s.Branch_Code.ToUpper() == outletNameFilter.ToUpper()
+                .Rpt_EL_CalculateSale
+                .Where(s =>
+                    outletFilters == null
+                    || !outletFilters.Any()
+                    || outletFilters.Contains(s.Branch_Code.ToUpper())
                 )
-                .Where(s => !startDate.HasValue || s.OrderDate.Date >= startDate.Value.Date)
-                .Where(s => !endDate.HasValue || s.OrderDate.Date <= endDate.Value.Date)
-                .GroupBy(s => new { s.Branch_Code, s.OrderDate.Date })
+                .Where(s =>
+                    !startDate.HasValue
+                    || s.OrderDate.Date >= startDate.Value.Date
+                )
+                .Where(s =>
+                    !endDate.HasValue
+                    || s.OrderDate.Date <= endDate.Value.Date
+                )
+                .GroupBy(s => new { s.Branch_Code, Date = s.OrderDate.Date })
                 .Select(g => new
                 {
                     BranchCode = g.Key.Branch_Code,
@@ -318,13 +353,15 @@ namespace DashboardAPI.Services
                     BranchArea = g.Max(x => x.Branch_Area) ?? string.Empty,
                     BranchStaff = g.Max(x => (int?)x.Branch_Staff) ?? 0,
                     LossSell = g.Sum(x =>
-                        (decimal?)x.LostSalePerBill * (decimal?)(x.TotalBill ?? 0)
-                    ) ?? 0,
+                        ((x.Branch_Bill - x.Saleprebill) * x.TotalBill) < 0
+                            ? 0
+                            : (x.Branch_Bill - x.Saleprebill) * x.TotalBill
+                    ),
                 })
                 .ToListAsync();
 
             // =========================
-            // 3. Join and Calculate รายวัน
+            // 3. Join + Calculate รายวัน
             // =========================
             var details = lossGrouped
                 .GroupJoin(
@@ -360,6 +397,7 @@ namespace DashboardAPI.Services
             // 4. สร้าง sum ถ้า isSum = true
             // =========================
             List<LossSellSummaryDto>? sum = null;
+
             if (isSum)
             {
                 sum = details
@@ -375,19 +413,21 @@ namespace DashboardAPI.Services
                         LSSeating = g.Sum(x => x.LSSeating),
                         LSPerBill = g.Sum(x => x.LSPerBill),
                         LSOpp = g.Sum(x => x.LSOpp),
-                        Date = default, // ไม่แสดงวันที่สำหรับ sum
+                        Date = default,
                     })
                     .ToList();
             }
 
             // =========================
-            // 5. Return เป็น IEnumerable<LossSellSummaryResponseDto>
+            // 5. Return
             // =========================
             var response = new LossSellSummaryResponseDto
             {
                 IsSum = isSum,
                 Sum = sum,
                 Details = details,
+                StartDate = startDate!.Value,
+                EndDate = endDate!.Value
             };
 
             return new List<LossSellSummaryResponseDto> { response };
@@ -568,18 +608,17 @@ namespace DashboardAPI.Services
         //     };
         // }
         public async Task<LossSellDetailDto?> GetDetailByOutletAsync(
-            string outletName,
-            DateTime? startDate,
-            DateTime? endDate
-        )
+     string? outletNameFilter,
+     DateTime? startDate,
+     DateTime? endDate)
         {
-            if (string.IsNullOrEmpty(outletName))
+            if (string.IsNullOrEmpty(outletNameFilter))
                 return null;
 
             // 1. ดึงข้อมูล Loss
-            var lossData = await _context
-                .uvw_El_Calculation.AsNoTracking()
-                .Where(x => x.OutletName == outletName)
+            var lossData = await _context.uvw_El_Calculation
+                .AsNoTracking()
+                .Where(x => x.OutletName == outletNameFilter)
                 .Where(x => !startDate.HasValue || x.CalDate >= startDate.Value.Date)
                 .Where(x => !endDate.HasValue || x.CalDate <= endDate.Value.Date)
                 .ToListAsync();
@@ -590,96 +629,71 @@ namespace DashboardAPI.Services
             var runIds = lossData.Select(d => d.RunId).Distinct().ToList();
 
             // 2. ดึง Note Count
-            var noteCountMap = await _context
-                .El_Calculation_Notes.AsNoTracking()
+            var noteCountMap = await _context.El_Calculation_Notes
+                .AsNoTracking()
                 .Where(n => runIds.Contains(n.RunId))
                 .GroupBy(n => n.RunId)
                 .ToDictionaryAsync(g => g.Key, g => g.Count());
 
             // 3. ดึงข้อมูลสรุปขาย
             var rangeEndExclusive = endDate?.Date.AddDays(1);
-            var salesSummary = await _context
-                .Rpt_EL_CalculateSale.AsNoTracking()
-                .Where(r => r.Branch_Code == outletName)
+
+            var salesSummary = await _context.Rpt_EL_CalculateSale
+                .AsNoTracking()
+                .Where(r => r.Branch_Code == outletNameFilter)
                 .Where(r => !startDate.HasValue || r.OrderDate >= startDate.Value)
                 .Where(r => !rangeEndExclusive.HasValue || r.OrderDate < rangeEndExclusive.Value)
                 .ToListAsync();
 
-            var isSingleDay =
-                startDate.HasValue
+            var isSingleDay = startDate.HasValue
                 && endDate.HasValue
                 && startDate.Value.Date == endDate.Value.Date;
 
-            // 4. คำนวณ Hourly Trend แบบ Flat
+            // 4. คำนวณ Hourly Trend
             var hourlyTrend = lossData
                 .GroupBy(x => string.IsNullOrWhiteSpace(x.CalHour) ? "0" : x.CalHour.Trim())
                 .Select(g =>
                 {
-                    int.TryParse(
-                        new string(g.Key.TakeWhile(char.IsDigit).ToArray()),
-                        out int hourInt
-                    );
+                    int.TryParse(new string(g.Key.TakeWhile(char.IsDigit).ToArray()), out int hourInt);
 
                     var sale = salesSummary.FirstOrDefault(s => s.OrderHour == hourInt);
 
-                    // ✅ Median เป็น double → แปลงเป็น decimal ก่อนใช้
                     decimal medianValue = (decimal)(sale?.Median ?? 0.0);
+                    decimal lsMedian = sale != null
+                        ? Math.Round((medianValue - (sale.Saleprebill ?? 0m)) * (sale.TotalBill ?? 0m), 2)
+                        : 0m;
 
-                    // ✅ LSMedian = (Median - AvgPerBill) * TotalBill
-                    decimal lsMedian =
-                        sale != null
-                            ? Math.Round(
-                                ((medianValue) - (sale.Saleprebill ?? 0m)) * (sale.TotalBill ?? 0m),
-                                2
-                            )
-                            : 0m;
-
-                    // ✅ Loss Components
-                    decimal lsProd = Math.Round(
-                        g.Sum(x => x.Lost_Item ?? 0m) * g.Average(x => x.Avg_Price ?? 0m),
-                        2
-                    );
+                    decimal lsProd = Math.Round(g.Sum(x => x.Lost_Item ?? 0m) * g.Average(x => x.Avg_Price ?? 0m), 2);
                     decimal lsSeating = Math.Round(g.Sum(x => x.Lost_Seating ?? 0m), 2);
-                    decimal lsPerBill =
-                        sale != null
-                            ? Math.Max(
-                                0,
-                                ((sale.Branch_Bill ?? 0m) - (sale.Saleprebill ?? 0m))
-                                    * (sale.TotalBill ?? 0m)
-                            )
-                            : 0m;
+                    decimal lsPerBill = sale != null
+                        ? Math.Max(0, ((sale.Branch_Bill ?? 0m) - (sale.Saleprebill ?? 0m)) * (sale.TotalBill ?? 0m))
+                        : 0m;
 
                     decimal lsOpp = lsProd + lsSeating + lsPerBill;
 
-                    // ✅ ProdTimeAVG จาก uvw_El_Calculation (เฉลี่ยต่อชั่วโมง)
                     decimal prodTimeAVG = Math.Round(g.Average(x => x.ProdTimeAVG ?? 0m), 2);
-                    decimal Avg_SeatingTime = Math.Round(
-                        g.Average(x => x.Avg_SeatingTime ?? 0m),
-                        2
-                    );
+                    decimal avgSeatingTime = Math.Round(g.Average(x => x.Avg_SeatingTime ?? 0m), 2);
 
-                    // ✅ Note Count
-                    int noteCount =
-                        isSingleDay && noteCountMap.ContainsKey(g.First().RunId)
-                            ? noteCountMap[g.First().RunId]
-                            : 0;
+                    int noteCount = isSingleDay && noteCountMap.ContainsKey(g.First().RunId)
+                        ? noteCountMap[g.First().RunId]
+                        : 0;
 
                     return new HourlyTrendDto
                     {
                         Hour = g.Key,
                         RunId = isSingleDay ? g.First().RunId : Guid.Empty,
 
-                        // Loss
                         LSProd = lsProd,
                         LSSeating = lsSeating,
                         LSPerBill = lsPerBill,
                         LSMedian = lsMedian,
                         LSOPP = lsOpp,
-                        TotalBill = sale.TotalBill,
-                        // Summary & Extra
+
+                        TotalBill = sale?.TotalBill,
                         NoteCount = noteCount,
                         ProdTimeAVG = prodTimeAVG,
-                        Avg_SeatingTime = Avg_SeatingTime,
+                        Avg_SeatingTime = avgSeatingTime,
+
                         Branch_Bill = sale?.Branch_Bill ?? 0,
                         AVGPerBill = sale?.Saleprebill,
                         NetSaleEatIn = (decimal)(sale?.NetSaleEatIn ?? 0),
@@ -688,23 +702,20 @@ namespace DashboardAPI.Services
                         Branch_Area = sale?.Branch_Area ?? "0",
                         Branch_Staff = sale?.Branch_Staff ?? 0,
                         DineInPercent = (decimal?)(sale?.EatInPercent ?? 0),
-                        OtherPercent = (decimal?)(sale?.OtherPercent ?? 0),
+                        OtherPercent = (decimal?)(sale?.OtherPercent ?? 0)
                     };
                 })
-                .OrderBy(x =>
-                    int.TryParse(new string(x.Hour.TakeWhile(char.IsDigit).ToArray()), out var h)
-                        ? h
-                        : 0
-                )
+                .OrderBy(x => int.TryParse(new string(x.Hour.TakeWhile(char.IsDigit).ToArray()), out var h) ? h : 0)
                 .ToList();
 
-            // 5. รวมสรุปผล
+            // 5. สรุปผลรวม
             return new LossSellDetailDto
             {
-                OutletName = outletName,
+                OutletName = outletNameFilter,
                 NetDineIn = (decimal)salesSummary.Sum(s => s.NetSaleEatIn ?? 0),
                 LossOpp = hourlyTrend.Sum(h => h.LSOPP),
-                HourlyTrend = hourlyTrend,
+                DailyPerBill = hourlyTrend.Average(h => h.AVGPerBill ?? 0),
+                HourlyTrend = hourlyTrend
             };
         }
 
@@ -920,6 +931,7 @@ namespace DashboardAPI.Services
             var result = await query
                 .OrderBy(x => x.SeatDate)
                 .ThenBy(x => x.Table_Name)
+                .ThenBy(x => x.Start_Time)
                 .Select(x => new SeatingLostDto
                 {
                     BranchCode = x.BranchCode,
