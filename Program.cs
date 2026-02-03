@@ -93,6 +93,7 @@ builder.Services.AddSwaggerGen(c =>
         }
     );
 });
+builder.Services.AddMemoryCache();
 
 // Service
 builder.Services.AddScoped<ISummaryService, SummaryService>();

@@ -6,16 +6,20 @@ using System.Threading.Tasks;
 using DashboardAPI.Data;
 using DashboardAPI.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace DashboardAPI.Services
 {
     public class SummaryService : ISummaryService
     {
         private readonly AppDbContext _context;
+        private readonly IMemoryCache _cache;
 
-        public SummaryService(AppDbContext context)
+
+        public SummaryService(AppDbContext context , IMemoryCache cache)
         {
             _context = context;
+            _cache = cache;
         }
 
         private List<string> GetUserBranches(ClaimsPrincipal user)
@@ -240,22 +244,43 @@ namespace DashboardAPI.Services
         // }
 
         public async Task<IEnumerable<LossSellSummaryResponseDto>> GetSummaryAsync(
-     ClaimsPrincipal user,
-     List<string>? outletNameFilter,
-     DateTime? startDate,
-     DateTime? endDate,
-     bool isSum
- )
+    ClaimsPrincipal user,
+    List<string>? outletNameFilter,
+    DateTime? startDate,
+    DateTime? endDate,
+    bool isSum
+)
         {
             _context.Database.SetCommandTimeout(180);
+
             // =========================
-            // 0.x default date = current month
+            // 0.x default date = latest month with data (FAST AS HELL)
             // =========================
             if (!startDate.HasValue && !endDate.HasValue)
             {
-                var today = DateTime.Today;
-                startDate = new DateTime(today.Year, today.Month, 1);
-                endDate = startDate.Value.AddMonths(1).AddDays(-1);
+                var latestDate = await _cache.GetOrCreateAsync("LATEST_LOSSSELL_MONTH", async entry =>
+                {
+                    entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(6);
+
+                    return await _context.uvw_El_Calculation
+                        .Where(x => x.CalDate.HasValue)
+                        .OrderByDescending(x => x.CalDate)
+                        .Select(x => x.CalDate)
+                        .FirstOrDefaultAsync();
+                });
+
+                if (latestDate.HasValue)
+                {
+                    startDate = new DateTime(latestDate.Value.Year, latestDate.Value.Month, 1);
+                    endDate = startDate.Value.AddMonths(1).AddDays(-1);
+                }
+                else
+                {
+                    // fallback กันโลกแตก
+                    var today = DateTime.Today;
+                    startDate = new DateTime(today.Year, today.Month, 1);
+                    endDate = startDate.Value.AddMonths(1).AddDays(-1);
+                }
             }
 
             // =========================
@@ -279,7 +304,7 @@ namespace DashboardAPI.Services
             }
 
             // =========================
-            // 0.1 เตรียม outlet filter (หลายสาขา)
+            // 0.1 เตรียม outlet filter
             // =========================
             var outletFilters = outletNameFilter?
                 .Where(x => !string.IsNullOrWhiteSpace(x))
@@ -289,8 +314,7 @@ namespace DashboardAPI.Services
             // =========================
             // 1. Loss Group (Daily)
             // =========================
-            var lossGrouped = await _context
-                .uvw_El_Calculation
+            var lossGrouped = await _context.uvw_El_Calculation
                 .Where(x => allowedBranches.Contains(x.OutletName.ToUpper()))
                 .Where(x =>
                     outletFilters == null
@@ -298,12 +322,9 @@ namespace DashboardAPI.Services
                     || outletFilters.Contains(x.OutletName.ToUpper())
                 )
                 .Where(x =>
-                    !startDate.HasValue
-                    || (x.CalDate.HasValue && x.CalDate.Value.Date >= startDate.Value.Date)
-                )
-                .Where(x =>
-                    !endDate.HasValue
-                    || (x.CalDate.HasValue && x.CalDate.Value.Date <= endDate.Value.Date)
+                    x.CalDate.HasValue
+                    && x.CalDate.Value.Date >= startDate!.Value.Date
+                    && x.CalDate.Value.Date <= endDate!.Value.Date
                 )
                 .GroupBy(x => new
                 {
@@ -315,11 +336,9 @@ namespace DashboardAPI.Services
                 {
                     g.Key.OutletId,
                     g.Key.OutletName,
-                    Date = g.Key.CalDate.Value.Date,
+                    Date = g.Key.CalDate!.Value.Date,
                     LostProd = g.Sum(x => (decimal?)x.Lost_Productivity) ?? 0,
                     LostSeat = g.Sum(x => (decimal?)x.Lost_Seating) ?? 0,
-                    TotalLostItem = g.Sum(x => (decimal?)x.Lost_Item) ?? 0,
-                    TotalLostTable = g.Sum(x => (decimal?)x.Lost_Table) ?? 0,
                     AvgPrice = g.Average(x => (decimal?)x.Avg_Price) ?? 0,
                     AvgPerBill = g.Average(x => (decimal?)x.Bill_Total) ?? 0,
                 })
@@ -328,27 +347,21 @@ namespace DashboardAPI.Services
             // =========================
             // 2. Sale Group (Daily)
             // =========================
-            var saleGrouped = await _context
-                .Rpt_EL_CalculateSale
+            var saleGrouped = await _context.Rpt_EL_CalculateSale
                 .Where(s =>
                     outletFilters == null
                     || !outletFilters.Any()
                     || outletFilters.Contains(s.Branch_Code.ToUpper())
                 )
                 .Where(s =>
-                    !startDate.HasValue
-                    || s.OrderDate.Date >= startDate.Value.Date
-                )
-                .Where(s =>
-                    !endDate.HasValue
-                    || s.OrderDate.Date <= endDate.Value.Date
+                    s.OrderDate.Date >= startDate!.Value.Date
+                    && s.OrderDate.Date <= endDate!.Value.Date
                 )
                 .GroupBy(s => new { s.Branch_Code, Date = s.OrderDate.Date })
                 .Select(g => new
                 {
                     BranchCode = g.Key.Branch_Code,
                     Date = g.Key.Date,
-                    NetSale = g.Sum(x => (decimal?)x.NetSale) ?? 0,
                     NetSaleEatIn = g.Sum(x => (decimal?)x.NetSaleEatIn) ?? 0,
                     BranchArea = g.Max(x => x.Branch_Area) ?? string.Empty,
                     BranchStaff = g.Max(x => (int?)x.Branch_Staff) ?? 0,
@@ -361,7 +374,7 @@ namespace DashboardAPI.Services
                 .ToListAsync();
 
             // =========================
-            // 3. Join + Calculate รายวัน
+            // 3. Join + Calculate
             // =========================
             var details = lossGrouped
                 .GroupJoin(
@@ -372,10 +385,9 @@ namespace DashboardAPI.Services
                 )
                 .Select(x =>
                 {
-                    decimal lsProd = x.l.LostProd;
-                    decimal lsSeating = x.l.LostSeat;
-                    decimal lsPerBill = x.s?.LossSell ?? 0;
-                    decimal lsOpp = lsProd + lsSeating + lsPerBill;
+                    var lsProd = x.l.LostProd;
+                    var lsSeat = x.l.LostSeat;
+                    var lsPerBill = x.s?.LossSell ?? 0;
 
                     return new LossSellSummaryDto
                     {
@@ -386,15 +398,15 @@ namespace DashboardAPI.Services
                         BranchArea = x.s?.BranchArea ?? string.Empty,
                         BranchStaff = x.s?.BranchStaff ?? 0,
                         LSProd = lsProd,
-                        LSSeating = lsSeating,
+                        LSSeating = lsSeat,
                         LSPerBill = lsPerBill,
-                        LSOpp = lsOpp,
+                        LSOpp = lsProd + lsSeat + lsPerBill,
                     };
                 })
                 .ToList();
 
             // =========================
-            // 4. สร้าง sum ถ้า isSum = true
+            // 4. Sum
             // =========================
             List<LossSellSummaryDto>? sum = null;
 
@@ -421,17 +433,19 @@ namespace DashboardAPI.Services
             // =========================
             // 5. Return
             // =========================
-            var response = new LossSellSummaryResponseDto
-            {
-                IsSum = isSum,
-                Sum = sum,
-                Details = details,
-                StartDate = startDate!.Value,
-                EndDate = endDate!.Value
-            };
-
-            return new List<LossSellSummaryResponseDto> { response };
+            return new List<LossSellSummaryResponseDto>
+    {
+        new LossSellSummaryResponseDto
+        {
+            IsSum = isSum,
+            Sum = sum,
+            Details = details,
+            StartDate = startDate!.Value,
+            EndDate = endDate!.Value
         }
+    };
+        }
+
 
         // ============================
         // Detail per Outlet
