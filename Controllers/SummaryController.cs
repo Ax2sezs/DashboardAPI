@@ -39,6 +39,23 @@ namespace DashboardAPI.Controllers
 
             return Ok(result);
         }
+        [Authorize]
+        [HttpGet("dashboard-insight")]
+        public async Task<IActionResult> GetDashboardInsight(
+              [FromQuery] List<string>? outletNames,
+              [FromQuery] DateTime? startDate,
+              [FromQuery] DateTime? endDate
+          )
+        {
+            var result = await _summaryService.GetDashboardInsightAsync(
+                User,
+                outletNames,
+                startDate,
+                endDate
+            );
+
+            return Ok(result);
+        }
 
 
         [Authorize]
@@ -82,21 +99,39 @@ namespace DashboardAPI.Controllers
             [FromQuery] string outletName,
             [FromQuery] DateTime? startDate,
             [FromQuery] DateTime? endDate,
-            [FromQuery] string? hour
+            [FromQuery] string? hour,
+            [FromQuery] int page     = 1,
+            [FromQuery] int pageSize = 200
         )
         {
             if (string.IsNullOrEmpty(outletName))
                 return BadRequest("outletName is required");
 
             var result = await _summaryService.GetBillsByOutletAndHourAsync(
-                outletName,
-                startDate,
-                endDate,
-                hour
-            );
+                outletName, startDate, endDate, hour, page, pageSize);
 
             if (result == null || !result.Any())
                 return NotFound("No bill data found for the given parameters");
+
+            return Ok(result);
+        }
+
+        [Authorize]
+        [HttpGet("get-perbilllost-details")]
+        public async Task<IActionResult> GetPerBillLostDetails(
+            [FromQuery] string outletName,
+            [FromQuery] DateTime? startDate,
+            [FromQuery] DateTime? endDate,
+            [FromQuery] string? hour,
+            [FromQuery] int page     = 1,
+            [FromQuery] int pageSize = 200
+        )
+        {
+            if (string.IsNullOrEmpty(outletName))
+                return BadRequest("outletName is required");
+
+            var result = await _summaryService.GetLossPerBillByOutletAndHourAsync(
+                outletName, startDate, endDate, hour, page, pageSize);
 
             return Ok(result);
         }
@@ -107,18 +142,16 @@ namespace DashboardAPI.Controllers
             [FromQuery] string outletName,
             [FromQuery] DateTime? startDate,
             [FromQuery] DateTime? endDate,
-            [FromQuery] string? hour
+            [FromQuery] string? hour,
+            [FromQuery] int page     = 1,
+            [FromQuery] int pageSize = 200
         )
         {
             if (string.IsNullOrEmpty(outletName))
                 return BadRequest("outletName is required");
 
             var result = await _summaryService.GetSeatingLostByOutletAndHourAsync(
-                outletName,
-                startDate,
-                endDate,
-                hour
-            );
+                outletName, startDate, endDate, hour, page, pageSize);
 
             return Ok(result);
         }

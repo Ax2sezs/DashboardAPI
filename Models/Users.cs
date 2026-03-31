@@ -7,6 +7,8 @@ namespace DashboardAPI.Models
         public string User_Name { get; set; }
         public int IsAdmin { get; set; }
         public string Branch { get; set; }
+        public string USER_PASSWORD { get; set; }
+
 
     }
 }

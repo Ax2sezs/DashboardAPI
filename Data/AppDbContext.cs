@@ -17,7 +17,7 @@ namespace DashboardAPI.Data
         public DbSet<RptElCalculateSale> Rpt_EL_CalculateSale { get; set; }
         public DbSet<RptELProductionTime> rpt_El_ProductionTime { get; set; }
         public DbSet<RptELSeatingLost> Rpt_EL_SeatingLost { get; set; }
-
+        public DbSet<ElCalculateSaleDetail> rpt_EL_CalculateSale_Detail { get; set; }
         public DbSet<EL_LossSummary> EL_LossSummary { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -40,6 +40,7 @@ namespace DashboardAPI.Data
             modelBuilder.Entity<RptELProductionTime>().HasNoKey();
             modelBuilder.Entity<RptELSeatingLost>().HasNoKey();
             modelBuilder.Entity<UserBranch>().HasNoKey();
+            modelBuilder.Entity<ElCalculateSaleDetail>().HasNoKey();
             modelBuilder
                 .Entity<RptElCalculateSale>()
                 .HasKey(e => new { e.Branch_Code, e.OrderDate });

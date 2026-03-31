@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace DashboardAPI.Services
@@ -19,6 +20,23 @@ namespace DashboardAPI.Services
             _context = context;
             _configuration = configuration;
         }
+        private static string EncryptStringMD5(string strString)
+        {
+            if (string.IsNullOrEmpty(strString)) return string.Empty;
+
+            using (var md5 = MD5.Create())
+            {
+                byte[] byteSourceText = Encoding.UTF8.GetBytes(strString);
+                byte[] byteHash = md5.ComputeHash(byteSourceText);
+
+                StringBuilder sb = new StringBuilder();
+                foreach (byte b in byteHash)
+                {
+                    sb.Append(b.ToString("x2"));
+                }
+                return sb.ToString();
+            }
+        }
 
         public async Task<LoginResponse?> AuthenticateAsync(LoginRequest request)
         {
@@ -29,11 +47,13 @@ namespace DashboardAPI.Services
 
             if (user == null)
                 return null;
+            string hashedInputPassword = EncryptStringMD5(request.Password);
 
             // ตรวจสอบ password default
-            var defaultPassword = _configuration["DefaultPassword"];
-            if (request.Password != defaultPassword)
+            if (user.USER_PASSWORD == null || !user.USER_PASSWORD.Equals(hashedInputPassword, StringComparison.OrdinalIgnoreCase))
+            {
                 return null;
+            }
 
             // ดึง Branch ทั้งหมด
             var branches = await _context.UserBranches
@@ -80,4 +100,4 @@ namespace DashboardAPI.Services
             };
         }
     }
-    }
+}
