@@ -1,12 +1,11 @@
 {
   "Version": 1,
-  "Hash": "D3qu1pKEd026dtmDEpuNqJU2BI3Goc7Fwnm4VH52qU0=",
+  "Hash": "5i4mi/vg00f0q0qm0aQSA4jUq2ViSjO6ykDXDgAUn6g=",
   "Source": "DashboardAPI",
   "BasePath": "_content/DashboardAPI",
   "Mode": "Default",
   "ManifestType": "Publish",
   "ReferencedProjectsConfiguration": [],
   "DiscoveryPatterns": [],
-  "Assets": [],
-  "Endpoints": []
+  "Assets": []
 }

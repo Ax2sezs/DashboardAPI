@@ -1,0 +1,69 @@
+## Ignore build results
+bin/
+obj/
+out/
+publish/
+
+## Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+## Visual Studio Code
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+## Rider / JetBrains
+.idea/
+*.sln.iml
+
+## OS files
+.DS_Store
+Thumbs.db
+
+## Logs
+*.log
+
+## NuGet
+*.nupkg
+# packages/   # เปิดใช้ถ้าไม่ได้ใช้ PackageReference
+.nuget/
+
+## Test results
+TestResults/
+
+## ASP.NET Core
+appsettings.Development.json
+appsettings.Local.json
+appsettings.*.json
+!appsettings.json
+
+## Secrets
+secrets.json
+*.pfx
+*.snk
+
+## Publish
+publish/
+wwwroot/lib/
+
+## Entity Framework
+Migrations/*.Designer.cs
+Migrations/*.Designer.cs.meta
+
+## Dotnet tools
+.dotnet/
+
+## Coverage
+coverage/
+*.coverage
+*.coveragexml
+
+## Environment
+.env
+.env.*

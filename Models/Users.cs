@@ -8,7 +8,10 @@ namespace DashboardAPI.Models
         public int IsAdmin { get; set; }
         public string Branch { get; set; }
         public string USER_PASSWORD { get; set; }
+<<<<<<< HEAD
 
+=======
+>>>>>>> 9d816f3f653c9de7059095a12e6be0f90124669c
 
     }
 }
